@@ -56,6 +56,7 @@ def run():
     #argparse
     parser = argparse.ArgumentParser(description='prepare dtu evaluation')
     parser.add_argument('--dataset', required=True,  default="",  help="dataset which can be dtu or bmvs")
+    parser.add_argument('--scene', required=True,  default="",  help="scene name")
     parser.add_argument('--comp_name', required=True,  help='Tells which computer are we using which influences the paths for finding the data')
     parser.add_argument('--with_mask', action='store_true', help="Set this to true in order to train with a mask")
     args = parser.parse_args()
@@ -64,8 +65,6 @@ def run():
 
     #get the results path which will be at the root of the permuto_sdf package 
     permuto_sdf_root=os.path.dirname(os.path.abspath(permuto_sdf.__file__))
-    results_path=os.path.join(permuto_sdf_root, "results")
-    os.makedirs(results_path, exist_ok=True)
     # ckpts
     checkpoint_path=os.path.join(permuto_sdf_root, "checkpoints")
 
@@ -75,7 +74,6 @@ def run():
     with_viewer=False
     print("args.dataset", args.dataset)
     print("args.with_mask", args.with_mask)
-    print("results_path",results_path)
     print("with_viewer", with_viewer)
     chunk_size=3000
     iter_nr_for_anneal=9999999
@@ -97,113 +95,117 @@ def run():
     model_rgb.train(False)
     model_bg.train(False)
 
-
     color_mngr=ColorMngr()
 
+    scan_name = args.scene
 
-    scenes_list=list_scenes.datasets[args.dataset]
-    
-    # run over every scene 
-    # nr_scenes=loader_cur.nr_scenes()
-    for scan_name in scenes_list:
-        for i in range(2):
-            if i==0:
-                cur_mode="train"
-            else:
-                cur_mode="test"
+    for i in range(2):
+        if i==0:
+            cur_mode="train"
+        else:
+            cur_mode="test"
 
-            # if scan_name!="dtu_scan63":
-                # continue
+        # if scan_name!="dtu_scan63":
+            # continue
 
-            loader_train, loader_test= create_dataloader(config_path, args.dataset, scan_name, low_res, args.comp_name, args.with_mask)
-            if i==0:
-                loader_cur=loader_train
-            else:
-                loader_cur=loader_test
+        loader_train, loader_test= create_dataloader(config_path, args.dataset, scan_name, low_res, args.comp_name, True)
+        if i==0:
+            loader_cur=loader_train
+        else:
+            loader_cur=loader_test
 
 
-            nr_samples=loader_cur.nr_samples()
-            print("nr_samples", nr_samples)
+        nr_samples=loader_cur.nr_samples()
+        print("nr_samples", nr_samples)
 
 
-            #get the list of checkpoints
-            config_training="with_mask_"+str(args.with_mask) 
-            scene_config=args.dataset+"_"+config_training
-            ckpts=list_chkpts.ckpts[scene_config]
-            ckpt_for_scene=ckpts[scan_name]
-            ckpt_path_full=os.path.join(checkpoint_path,ckpt_for_scene,"models")
+        #get the list of checkpoints
+        # config_training="with_mask_"+str(args.with_mask) 
+        # scene_config=args.dataset+"_"+config_training
+        # ckpts=f"permuto_sdf_{scan_name}_default/200000"  # list_chkpts.ckpts[scene_config] 
+        # ckpt_for_scene=f"permuto_sdf_{scan_name}_default/200000"
+        ckpt_for_scene = f"{args.scene}/200000"
+        ckpt_path_full = os.path.join(checkpoint_path,ckpt_for_scene,"models")
 
-            #load
-            load_from_checkpoint(ckpt_path_full, model_sdf, model_rgb, model_bg, occupancy_grid)
+        #load
+        load_from_checkpoint(ckpt_path_full, model_sdf, model_rgb, model_bg, occupancy_grid)
 
+        for i in range(nr_samples):
+            frame=loader_cur.get_frame_at_idx(i) 
+            print("render img", frame.frame_idx)
+
+            if frame.is_shell:
+                frame.load_images()
+
+            with torch.no_grad():
+                pred_rgb_img, pred_rgb_bg_img, pred_normals_img, pred_weights_sum_img = run_net_in_chunks(frame, chunk_size, args, hyperparams, model_sdf, model_rgb, model_bg, occupancy_grid, iter_nr_for_anneal, cos_anneal_ratio, hyperparams.forced_variance_finish) 
+                
+                pred_rgb_img=pred_rgb_img.detach().cpu()
+                pred_normals_img=pred_normals_img.detach().cpu() 
+                pred_weights_sum_img=pred_weights_sum_img.detach().cpu()
             
+                #get mask
+                mask_tensor=mat2tensor(frame.mask, True)
+                
+                #get gt
+                gt_img_tensor=mat2tensor(frame.rgb_8u, True).float()/255
+                
+                gt_masked_img_tensor = gt_img_tensor*mask_tensor
+                pred_masked_img = pred_rgb_img*mask_tensor
+            
+            #combine with alpha from the weights
+            # pred_rgba_img=torch.cat([pred_rgb_img,pred_weights_sum_img],1)
+            # pred_img_mat=tensor2mat(pred_rgba_img).rgba2bgra().to_cv8u()
+            pred_img_mat=tensor2mat(pred_rgb_img).rgb2bgr().to_cv8u()
+            pred_masked_img_mat=tensor2mat(pred_masked_img).rgb2bgr().to_cv8u()
 
+            gt_img_mat=tensor2mat(gt_img_tensor).rgb2bgr().to_cv8u()
+            gt_masked_img_mat=tensor2mat(gt_masked_img_tensor).rgb2bgr().to_cv8u()
 
+            #normals
+            pred_normals_img=torch.nn.functional.normalize(pred_normals_img, dim=1)
+            pred_normals_img_vis=(pred_normals_img+1.0)*0.5
+            pred_normals_img_vis=torch.cat([pred_normals_img_vis,pred_weights_sum_img],1) #concat alpha
+            pred_normals_mat=tensor2mat(pred_normals_img_vis.detach()).rgba2bgra().to_cv8u()
 
-            for i in range(nr_samples):
-                frame=loader_cur.get_frame_at_idx(i) 
-                print("render img", frame.frame_idx)
+            # #normals view coord 
+            # cam=Camera()
+            # cam.from_frame(frame)
+            # tf_cam_world=cam.view_matrix_affine() 
+            # tf_cam_world_t=torch.from_numpy(tf_cam_world.matrix()).cuda()
+            # tf_cam_world_R=torch.from_numpy(tf_cam_world.matrix()).cuda()[0:3, 0:3]
+            # pred_normals_lin=nchw2lin(pred_normals_img)
+            # pred_normals_lin_0=torch.cat([pred_normals_lin, torch.zeros_like(pred_normals_lin)[:,0:1]  ],1)
+            # pred_normals_viewcoords_lin=torch.matmul(tf_cam_world_R,pred_normals_lin.t()).t()
+            # pred_normals_viewcoords_lin=torch.nn.functional.normalize(pred_normals_viewcoords_lin,dim=1)
+            # pred_normals_viewcoords_lin_vis=(pred_normals_viewcoords_lin+1)*0.5
+            # pred_normals_viewcoords_img_vis=lin2nchw(pred_normals_viewcoords_lin_vis, frame.height, frame.width)
+            # pred_normals_viewcoords_img_vis=torch.cat([pred_normals_viewcoords_img_vis,pred_weights_sum_img],1) #concat alpha
+            # pred_normals_viewcoords_mat=tensor2mat(pred_normals_viewcoords_img_vis.detach()).rgba2bgra().to_cv8u()
 
-                if frame.is_shell:
-                    frame.load_images()
+            #output path
+            # out_img_path=os.path.join(permuto_sdf_root,"results/output_permuto_sdf_images",args.dataset, config_training, cur_mode, scan_name)
+            out_img_path = os.path.join(checkpoint_path, ckpt_for_scene, "renders", cur_mode, "volumetric")
+            
+            #write images to file
+            os.makedirs(  os.path.join(out_img_path,"rgb"), exist_ok=True)
+            os.makedirs(  os.path.join(out_img_path,"gt"), exist_ok=True)
+            os.makedirs(  os.path.join(out_img_path,"masked_rgb"), exist_ok=True)
+            os.makedirs(  os.path.join(out_img_path,"masked_gt"), exist_ok=True)
+            os.makedirs(  os.path.join(out_img_path,"normals"), exist_ok=True)
+            # os.makedirs(  os.path.join(out_img_path,"normals_viewcoords"), exist_ok=True)
 
-                with torch.no_grad():
-                    pred_rgb_img, pred_rgb_bg_img, pred_normals_img, pred_weights_sum_img=run_net_in_chunks(frame, chunk_size, args, hyperparams, model_sdf, model_rgb, model_bg, occupancy_grid, iter_nr_for_anneal, cos_anneal_ratio, hyperparams.forced_variance_finish) 
-                    pred_normals_img=pred_normals_img.detach() 
-                    
+            # save gt
+            gt_img_mat.to_file(   os.path.join(out_img_path,"gt", str(frame.frame_idx)+".png"  )  )
+            gt_masked_img_mat.to_file(   os.path.join(out_img_path,"masked_gt", str(frame.frame_idx)+".png"  )  )
+            pred_img_mat.to_file(   os.path.join(out_img_path,"rgb", str(frame.frame_idx)+".png"  )  )
+            pred_masked_img_mat.to_file(   os.path.join(out_img_path,"masked_rgb", str(frame.frame_idx)+".png"  )  )
+            pred_normals_mat.to_file(   os.path.join(out_img_path,"normals", str(frame.frame_idx)+".png"  )  )
+            
+            # pred_normals_viewcoords_mat.to_file(   os.path.join(out_img_path,"normals_viewcoords", str(frame.frame_idx)+".png"  )  )
 
-
-                #combine with alpha from the weights
-                pred_rgba_img=torch.cat([pred_rgb_img,pred_weights_sum_img],1)
-                pred_img_mat=tensor2mat(pred_rgba_img.detach()).rgba2bgra().to_cv8u()
-
-                #normals
-                pred_normals_img=torch.nn.functional.normalize(pred_normals_img, dim=1)
-                pred_normals_img_vis=(pred_normals_img+1.0)*0.5
-                pred_normals_img_vis=torch.cat([pred_normals_img_vis,pred_weights_sum_img],1) #concat alpha
-                pred_normals_mat=tensor2mat(pred_normals_img_vis.detach()).rgba2bgra().to_cv8u()
-
-                #normals view coord 
-                cam=Camera()
-                cam.from_frame(frame)
-                tf_cam_world=cam.view_matrix_affine() 
-                tf_cam_world_t=torch.from_numpy(tf_cam_world.matrix()).cuda()
-                tf_cam_world_R=torch.from_numpy(tf_cam_world.matrix()).cuda()[0:3, 0:3]
-                pred_normals_lin=nchw2lin(pred_normals_img)
-                pred_normals_lin_0=torch.cat([pred_normals_lin, torch.zeros_like(pred_normals_lin)[:,0:1]  ],1)
-                pred_normals_viewcoords_lin=torch.matmul(tf_cam_world_R,pred_normals_lin.t()).t()
-                pred_normals_viewcoords_lin=torch.nn.functional.normalize(pred_normals_viewcoords_lin,dim=1)
-                pred_normals_viewcoords_lin_vis=(pred_normals_viewcoords_lin+1)*0.5
-                pred_normals_viewcoords_img_vis=lin2nchw(pred_normals_viewcoords_lin_vis, frame.height, frame.width)
-                pred_normals_viewcoords_img_vis=torch.cat([pred_normals_viewcoords_img_vis,pred_weights_sum_img],1) #concat alpha
-                pred_normals_viewcoords_mat=tensor2mat(pred_normals_viewcoords_img_vis.detach()).rgba2bgra().to_cv8u()
-
-                #output path
-                out_img_path=os.path.join(permuto_sdf_root,"results/output_permuto_sdf_images",args.dataset, config_training, cur_mode, scan_name)
-
-                #write images to file
-                os.makedirs(  os.path.join(out_img_path,"rgb"), exist_ok=True)
-                # os.makedirs(  os.path.join(out_img_path,"normals"), exist_ok=True)
-                os.makedirs(  os.path.join(out_img_path,"normals_viewcoords"), exist_ok=True)
-
-                pred_img_mat.to_file(   os.path.join(out_img_path,"rgb", str(frame.frame_idx)+".png"  )  )
-                # pred_normals_mat.to_file(   os.path.join(out_img_path,"normals", str(frame.frame_idx)+".png"  )  )
-                pred_normals_viewcoords_mat.to_file(   os.path.join(out_img_path,"normals_viewcoords", str(frame.frame_idx)+".png"  )  )
-
-
-
-
-                frame.unload_images()
-                # break
-
-
-
-
-
-
-    
-
-
+            frame.unload_images()
+            # break
 
 
 

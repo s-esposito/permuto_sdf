@@ -569,11 +569,10 @@ def run():
     print("with_viewer", with_viewer)
     print("has_apex", has_apex)
 
-
-    experiment_name="permuto_sdf_"+args.scene
-    if args.exp_info:
-        experiment_name+="_"+args.exp_info
-
+    # experiment_name="permuto_sdf_"+args.scene
+    # if args.exp_info:
+    #     experiment_name+="_"+args.exp_info
+    experiment_name = args.scene
 
     loader_train, loader_test= create_dataloader(config_path, args.dataset, args.scene, args.low_res, args.comp_name, args.with_mask)
 

@@ -31,4 +31,5 @@ if [ "$#" -ne 0 ]; then
 		--volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
 		--name permuto_sdf_img\
 		-it permuto_sdf_img:latest
+		
 
