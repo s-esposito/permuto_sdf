@@ -1,8 +1,11 @@
 #! /bin/bash
 
+DATASET_NAME=$1
+SCENE_NAME=$2
+
 python ./permuto_sdf_py/train_permuto_sdf.py \
---dataset dtu \
---scene dtu_scan105 \
+--dataset $DATASET_NAME \
+--scene $SCENE_NAME \
 --comp_name comp_3 \
 --exp_info default \
 --no_viewer

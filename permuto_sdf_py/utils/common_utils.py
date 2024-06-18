@@ -413,10 +413,33 @@ def create_dataloader(config_path, dataset_name, scene_name, low_res, comp_name,
     from dataloaders import DataLoaderMultiFace
     from dataloaders import DataLoaderPhenorobCP1
     from dataloaders import DataLoaderDTU
+    from dataloaders import DataLoaderNerf
 
     data_path=data_paths[comp_name]
     
-    if dataset_name=="easypbr":
+    if dataset_name == "blender":
+        loader_train = DataLoaderNerf(config_path)
+        loader_train.set_dataset_path(os.path.join(data_path, "blender"))
+        loader_train.set_mode_train()
+        loader_train.set_bg_color(255, 255, 255)
+        loader_train.set_load_mask(with_mask)
+        if scene_name:
+            loader_train.set_restrict_to_scene_name(scene_name)
+        loader_train.start()
+        print("{} samples in train".format(loader_train.nr_samples()))
+
+        # the test one has the same scene as the train one
+        loader_test = DataLoaderNerf(config_path)
+        loader_test.set_dataset_path(os.path.join(data_path, "blender"))
+        loader_test.set_mode_test()
+        loader_test.set_bg_color(255, 255, 255)
+        loader_test.set_load_mask(with_mask)
+        if scene_name:
+            loader_test.set_restrict_to_scene_name(scene_name)
+        loader_test.start()
+        print("{} samples in test".format(loader_test.nr_samples()))
+    
+    elif dataset_name=="easypbr":
         # easypbr
         loader_train=DataLoaderEasyPBR(config_path)
         loader_train.set_mode_train()
@@ -517,6 +540,8 @@ def create_bb_for_dataset(dataset_name):
         aabb=Sphere(0.5, [0,0,0])
     elif dataset_name=="dtu":
         aabb=Sphere(0.5, [0,0,0]) #so we make sure we don't acces the occupancy grid outside
+    elif dataset_name == "blender":
+        aabb = Sphere(0.5, [0, 0, 0])
     elif dataset_name=="bmvs":
         aabb=Sphere(0.5, [0,0,0])
     else:

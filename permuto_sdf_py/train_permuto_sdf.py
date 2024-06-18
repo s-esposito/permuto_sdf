@@ -95,7 +95,7 @@ class HyperParamsPermutoSDF:
     max_nr_samples_per_ray=64 #for the foreground
     nr_samples_imp_sampling=16
     do_importance_sampling=True                         #adds nr_samples_imp_samplingx2 more samples per ray
-    use_color_calibration=True
+    use_color_calibration=False
     nr_rays=512
     sdf_geom_feat_size=32
     sdf_nr_iters_for_c2f=10000*s_mult
@@ -441,7 +441,7 @@ def train(args, config_path, hyperparams, train_params, loader_train, experiment
             view.update()
 
         #save checkpoint
-        if train_params.save_checkpoint() and phase.iter_nr%10000==0:
+        if train_params.save_checkpoint() and phase.iter_nr%100000==0:
             model_sdf.save(checkpoint_path, experiment_name, phase.iter_nr)
             model_rgb.save(checkpoint_path, experiment_name, phase.iter_nr)
             model_bg.save(checkpoint_path, experiment_name, phase.iter_nr, additional_name="_bg")

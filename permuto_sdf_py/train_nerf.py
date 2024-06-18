@@ -49,7 +49,7 @@ class HyperParams:
     nr_samples_bg=32
     min_dist_between_samples=0.0001
     max_nr_samples_per_ray=64 #for the foreground
-    use_color_calibration=True
+    use_color_calibration=False
     nr_rays=512
     foreground_nr_iters_for_c2f=1
     background_nr_iters_for_c2f=10000
