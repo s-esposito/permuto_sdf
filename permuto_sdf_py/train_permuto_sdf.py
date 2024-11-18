@@ -88,7 +88,7 @@ class HyperParamsPermutoSDF:
     iter_finish_reduce_curv=iter_start_reduce_curv+1001
     lr_milestones=[100000*s_mult,150000*s_mult,180000*s_mult,190000*s_mult]
     iter_finish_training=200000*s_mult
-    forced_variance_finish=0.8
+    forced_variance_finish=1.0 # 0.8
     use_occupancy_grid=True
     nr_samples_bg=32
     min_dist_between_samples=0.0001
@@ -147,19 +147,36 @@ def run_net(args, hyperparams, ray_origins, ray_dirs, img_indices, model_sdf, mo
     # print("bg_ray_samples_packed.samples_pos_4d",bg_ray_samples_packed.samples_pos_4d)
 
     TIME_START("render_bg")    
-    #run nerf bg
-    if args.with_mask:
-        pred_rgb_bg=None
-    # else: #have to model the background
-    elif bg_ray_samples_packed.samples_pos_4d.shape[0]!=0: #have to model the background
-        #compute rgb and density
-        rgb_samples_bg, density_samples_bg=model_bg( bg_ray_samples_packed.samples_pos_4d, bg_ray_samples_packed.samples_dirs, iter_nr_for_anneal, model_colorcal, img_indices, ray_start_end_idx=bg_ray_samples_packed.ray_start_end_idx) 
-        #volumetric integration
-        weights_bg, weight_sum_bg, _= model_bg.volume_renderer_nerf.compute_weights(bg_ray_samples_packed, density_samples_bg.view(-1,1))
-        pred_rgb_bg=model_bg.volume_renderer_nerf.integrate(bg_ray_samples_packed, rgb_samples_bg, weights_bg)
-        #combine
-        pred_rgb_bg = bg_transmittance.view(-1,1) * pred_rgb_bg
-        pred_rgb = pred_rgb + pred_rgb_bg
+    
+    pred_rgb_bg=None
+    
+    if bg_ray_samples_packed.samples_pos_4d.shape[0] != 0: # have to model the background
+        
+        #run nerf bg
+        
+        if args.with_mask:
+            
+            pred_rgb_bg=None
+        
+        else:
+            
+            if args.train_bg: 
+                #have to model the background
+                
+                #compute rgb and density
+                rgb_samples_bg, density_samples_bg=model_bg( bg_ray_samples_packed.samples_pos_4d, bg_ray_samples_packed.samples_dirs, iter_nr_for_anneal, model_colorcal, img_indices, ray_start_end_idx=bg_ray_samples_packed.ray_start_end_idx) 
+                #volumetric integration
+                weights_bg, weight_sum_bg, _= model_bg.volume_renderer_nerf.compute_weights(bg_ray_samples_packed, density_samples_bg.view(-1,1))
+                pred_rgb_bg=model_bg.volume_renderer_nerf.integrate(bg_ray_samples_packed, rgb_samples_bg, weights_bg)
+            
+            else:
+                # const color white
+                pred_rgb_bg = torch.ones_like(ray_origins)
+                
+            #combine
+            pred_rgb_bg = bg_transmittance.view(-1,1) * pred_rgb_bg
+            pred_rgb = pred_rgb + pred_rgb_bg
+                
     TIME_END("render_bg")    
 
 
@@ -184,7 +201,7 @@ def run_net_in_chunks(frame, chunk_size, args, hyperparams, model_sdf, model_rgb
         nr_rays_chunk=ray_origins.shape[0]
     
         #run net 
-        pred_rgb, pred_rgb_bg, pred_normals, sdf_gradients, weights_sum, fg_ray_samples_packed  =run_net(args, hyperparams, ray_origins, ray_dirs, None, model_sdf, model_rgb, model_bg, None, occupancy_grid, iter_nr_for_anneal, cos_anneal_ratio, forced_variance)
+        pred_rgb, pred_rgb_bg, pred_normals, sdf_gradients, weights_sum, fg_ray_samples_packed = run_net(args, hyperparams, ray_origins, ray_dirs, None, model_sdf, model_rgb, model_bg, None, occupancy_grid, iter_nr_for_anneal, cos_anneal_ratio, forced_variance)
 
 
         #accumulat the rgb and weights_sum
@@ -327,7 +344,7 @@ def train(args, config_path, hyperparams, train_params, loader_train, experiment
         if in_process_of_sphere_init:
             loss, loss_sdf, loss_eikonal= loss_sphere_init(args.dataset, 30000, aabb, model_sdf, iter_nr_for_anneal )
             cos_anneal_ratio=1.0
-            forced_variance=0.8
+            forced_variance=1.0 # 0.8
         else:
             with torch.set_grad_enabled(False):
                 cos_anneal_ratio=map_range_val(iter_nr_for_anneal, 0.0, hyperparams.forced_variance_finish_iter, 0.0, 1.0)
@@ -529,12 +546,6 @@ def train(args, config_path, hyperparams, train_params, loader_train, experiment
 
         # if with_viewer:
         #     view.update()
-      
-
-                   
-
-
-                  
 
 
     print("finished trainng")
@@ -553,6 +564,7 @@ def run():
     parser.add_argument('--low_res', action='store_true', help="Use_low res images for training for when you have little GPU memory")
     parser.add_argument('--exp_info', default="", help='Experiment info string useful for distinguishing one experiment for another')
     parser.add_argument('--with_mask', action='store_true', help="Set this to true in order to train with a mask")
+    parser.add_argument('--train_bg', action='store_true', help="Set this to true to train bg")
     parser.add_argument('--no_viewer', action='store_true', help="Set this to true in order disable the viewer")
     args = parser.parse_args()
     with_viewer=not args.no_viewer
@@ -561,9 +573,9 @@ def run():
     permuto_sdf_root=os.path.dirname(os.path.abspath(permuto_sdf.__file__))
     checkpoint_path=os.path.join(permuto_sdf_root, "checkpoints")
     os.makedirs(checkpoint_path, exist_ok=True)
-
-
+    
     print("args.with_mask", args.with_mask)
+    print("args.train_bg", args.train_bg)
     print("args.low_res", args.low_res)
     print("checkpoint_path",checkpoint_path)
     print("with_viewer", with_viewer)

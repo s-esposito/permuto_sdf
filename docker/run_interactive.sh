@@ -31,6 +31,6 @@ if [ "$#" -ne 0 ]; then
 		--volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
 		--name permuto_sdf_interactive\
 		-v ~/Data:/workspace/Data\
-		-v /home/stefano/External/stefano_hdd/baselines/permuto_sdf/surf/base:/workspace/permuto_sdf/checkpoints\
+		-v /home/stefano/External/stefano_hdd/baselines/permuto_sdf/permutosdf/base:/workspace/permuto_sdf/checkpoints\
 		-v ~/Codebase/permuto_sdf:/workspace/permuto_sdf\
 		-it permuto_sdf_interactive:latest

@@ -59,6 +59,7 @@ def run():
     parser.add_argument('--scene', required=True,  default="",  help="scene name")
     parser.add_argument('--comp_name', required=True,  help='Tells which computer are we using which influences the paths for finding the data')
     parser.add_argument('--with_mask', action='store_true', help="Set this to true in order to train with a mask")
+    parser.add_argument('--train_bg', action='store_true', help="Set this to true to train bg")
     args = parser.parse_args()
     hyperparams=HyperParamsPermutoSDF()
 
@@ -105,9 +106,6 @@ def run():
         else:
             cur_mode="test"
 
-        # if scan_name!="dtu_scan63":
-            # continue
-
         loader_train, loader_test= create_dataloader(config_path, args.dataset, scan_name, low_res, args.comp_name, True)
         if i==0:
             loader_cur=loader_train
@@ -143,24 +141,29 @@ def run():
                 pred_rgb_img=pred_rgb_img.detach().cpu()
                 pred_normals_img=pred_normals_img.detach().cpu() 
                 pred_weights_sum_img=pred_weights_sum_img.detach().cpu()
+                # print("pred_rgb_img", pred_rgb_img.shape)
+                # print("pred_normals_img", pred_normals_img.shape)
+                # print("pred_weights_sum_img", pred_weights_sum_img.shape)
             
                 #get mask
-                mask_tensor=mat2tensor(frame.mask, True)
+                # mask_tensor=mat2tensor(frame.mask, True)
+                # print("mask_tensor", mask_tensor.shape)
                 
                 #get gt
-                gt_img_tensor=mat2tensor(frame.rgb_8u, True).float()/255
+                # gt_img_tensor=mat2tensor(frame.rgb_8u, True).float()/255
+                # print("gt_img_tensor", gt_img_tensor.shape)
                 
-                gt_masked_img_tensor = gt_img_tensor*mask_tensor
-                pred_masked_img = pred_rgb_img*mask_tensor
+                # gt_masked_img_tensor = gt_img_tensor*mask_tensor
+                # pred_masked_img = pred_rgb_img*mask_tensor
             
             #combine with alpha from the weights
             # pred_rgba_img=torch.cat([pred_rgb_img,pred_weights_sum_img],1)
             # pred_img_mat=tensor2mat(pred_rgba_img).rgba2bgra().to_cv8u()
             pred_img_mat=tensor2mat(pred_rgb_img).rgb2bgr().to_cv8u()
-            pred_masked_img_mat=tensor2mat(pred_masked_img).rgb2bgr().to_cv8u()
+            # pred_masked_img_mat=tensor2mat(pred_masked_img).rgb2bgr().to_cv8u()
 
-            gt_img_mat=tensor2mat(gt_img_tensor).rgb2bgr().to_cv8u()
-            gt_masked_img_mat=tensor2mat(gt_masked_img_tensor).rgb2bgr().to_cv8u()
+            # gt_img_mat=tensor2mat(gt_img_tensor).rgb2bgr().to_cv8u()
+            # gt_masked_img_mat=tensor2mat(gt_masked_img_tensor).rgb2bgr().to_cv8u()
 
             #normals
             pred_normals_img=torch.nn.functional.normalize(pred_normals_img, dim=1)
@@ -190,16 +193,16 @@ def run():
             #write images to file
             os.makedirs(  os.path.join(out_img_path,"rgb"), exist_ok=True)
             os.makedirs(  os.path.join(out_img_path,"gt"), exist_ok=True)
-            os.makedirs(  os.path.join(out_img_path,"masked_rgb"), exist_ok=True)
-            os.makedirs(  os.path.join(out_img_path,"masked_gt"), exist_ok=True)
+            # os.makedirs(  os.path.join(out_img_path,"masked_rgb"), exist_ok=True)
+            # os.makedirs(  os.path.join(out_img_path,"masked_gt"), exist_ok=True)
             os.makedirs(  os.path.join(out_img_path,"normals"), exist_ok=True)
             # os.makedirs(  os.path.join(out_img_path,"normals_viewcoords"), exist_ok=True)
 
             # save gt
-            gt_img_mat.to_file(   os.path.join(out_img_path,"gt", str(frame.frame_idx)+".png"  )  )
-            gt_masked_img_mat.to_file(   os.path.join(out_img_path,"masked_gt", str(frame.frame_idx)+".png"  )  )
+            # gt_img_mat.to_file(   os.path.join(out_img_path,"gt", str(frame.frame_idx)+".png"  )  )
+            # gt_masked_img_mat.to_file(   os.path.join(out_img_path,"masked_gt", str(frame.frame_idx)+".png"  )  )
             pred_img_mat.to_file(   os.path.join(out_img_path,"rgb", str(frame.frame_idx)+".png"  )  )
-            pred_masked_img_mat.to_file(   os.path.join(out_img_path,"masked_rgb", str(frame.frame_idx)+".png"  )  )
+            # pred_masked_img_mat.to_file(   os.path.join(out_img_path,"masked_rgb", str(frame.frame_idx)+".png"  )  )
             pred_normals_mat.to_file(   os.path.join(out_img_path,"normals", str(frame.frame_idx)+".png"  )  )
             
             # pred_normals_viewcoords_mat.to_file(   os.path.join(out_img_path,"normals_viewcoords", str(frame.frame_idx)+".png"  )  )
@@ -215,7 +218,7 @@ def main():
 
 
 if __name__ == "__main__":
-     main()  # This is what you would have, but the following is useful:
+    main()  # This is what you would have, but the following is useful:
 
     # # These are temporary, for debugging, so meh for programming style.
     # import sys, trace

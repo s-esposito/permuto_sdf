@@ -1,0 +1,1 @@
+- load blender dataset: https://github.com/s-esposito/volsurfs/tree/c6a304c17141020acc1903725c4e415ddea4bf3f
